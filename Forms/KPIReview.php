@@ -938,25 +938,61 @@ if (!empty($userDrafts)) {
         $headers = $mime->headers($headers);
         
         // Determine email recipients based on location
-        // TODO: Add location-based email logic once testing is complete
         $locationName = $_POST['locationName'];
         $locationNumber = $_POST['locationNumber'];
         
-        // Send to cjones@mayesh.com
-        $outEmails = "cjones@mayesh.com";
+        // Base emails (always sent to these)
+        $baseEmails = "pdahlson@mayesh.com,bpowell@mayesh.com,vdemetriou@mayesh.com,dburrows@mayesh.com";
         
-        // Future location-based logic will go here:
-        // switch ($locationNumber) {
-        //     case "001": // LA Market
-        //         $outEmails = "email1@mayesh.com,email2@mayesh.com";
-        //         break;
-        //     case "002": // Other location
-        //         $outEmails = "email3@mayesh.com";
-        //         break;
-        //     default:
-        //         $outEmails = "default@mayesh.com";
-        //         break;
-        // }
+        // COMMENTED OUT - Location-based email logic (uncomment when ready to implement)
+        /*
+        $additionalEmails = [];
+        
+        // Group 1: Add psessler@mayesh.com
+        // Atlanta (026), Miami (017), New Orleans (801), Orlando (802), Detroit (018), 
+        // Charlotte (022), Houston (023), Cleveland (024), Raleigh (027), Charleston (028)
+        if (in_array($locationNumber, ['026', '017', '801', '802', '018', '022', '023', '024', '027', '028'])) {
+            $additionalEmails[] = "psessler@mayesh.com";
+        }
+        
+        // Group 2: Add bfoster@mayesh.com
+        // LA Market (001), LAX/Shipping (009), Chandler (008), Phoenix (010), 
+        // Seattle (021), San Francisco (025)
+        if (in_array($locationNumber, ['001', '009', '008', '010', '021', '025'])) {
+            $additionalEmails[] = "bfoster@mayesh.com";
+        }
+        
+        // Group 3: Specialty Market Floral (004), Portland (019)
+        // Only base emails (no additional)
+        // No action needed - already handled by base emails
+        
+        // Group 4: Add dgeorgatos@mayesh.com
+        // Carlsbad (005), Las Vegas (011), Oxnard (012)
+        if (in_array($locationNumber, ['005', '011', '012'])) {
+            $additionalEmails[] = "dgeorgatos@mayesh.com";
+        }
+        
+        // Group 5: Add tdahlson@mayesh.com
+        // Orange County (003), Riverside (006), Bakersfield (007)
+        if (in_array($locationNumber, ['003', '006', '007'])) {
+            $additionalEmails[] = "tdahlson@mayesh.com";
+        }
+        
+        // Special case: Raleigh (027) also gets nbarnhill@mayesh.com
+        if ($locationNumber == '027') {
+            $additionalEmails[] = "nbarnhill@mayesh.com";
+        }
+        
+        // Combine base emails with additional emails
+        if (!empty($additionalEmails)) {
+            $outEmails = $baseEmails . "," . implode(",", $additionalEmails);
+        } else {
+            $outEmails = $baseEmails;
+        }
+        */
+        
+        // TEMPORARY: For now, send to cjones@mayesh.com for testing
+        $outEmails = "cjones@mayesh.com";
         
         $debugInfo[] = "Email recipients: " . $outEmails;
         
@@ -980,7 +1016,58 @@ if (!empty($userDrafts)) {
             }
             
             // Build simple email message
-            // Send to cjones@mayesh.com
+            // COMMENTED OUT - Location-based email logic (uncomment when ready to implement)
+            /*
+            // Base emails (always sent to these)
+            $baseEmails = "pdahlson@mayesh.com,bpowell@mayesh.com,vdemetriou@mayesh.com,dburrows@mayesh.com";
+            
+            $locationNumber = $_POST['locationNumber'];
+            $additionalEmails = [];
+            
+            // Group 1: Add psessler@mayesh.com
+            // Atlanta (026), Miami (017), New Orleans (801), Orlando (802), Detroit (018), 
+            // Charlotte (022), Houston (023), Cleveland (024), Raleigh (027), Charleston (028)
+            if (in_array($locationNumber, ['026', '017', '801', '802', '018', '022', '023', '024', '027', '028'])) {
+                $additionalEmails[] = "psessler@mayesh.com";
+            }
+            
+            // Group 2: Add bfoster@mayesh.com
+            // LA Market (001), LAX/Shipping (009), Chandler (008), Phoenix (010), 
+            // Seattle (021), San Francisco (025)
+            if (in_array($locationNumber, ['001', '009', '008', '010', '021', '025'])) {
+                $additionalEmails[] = "bfoster@mayesh.com";
+            }
+            
+            // Group 3: Specialty Market Floral (004), Portland (019)
+            // Only base emails (no additional)
+            // No action needed - already handled by base emails
+            
+            // Group 4: Add dgeorgatos@mayesh.com
+            // Carlsbad (005), Las Vegas (011), Oxnard (012)
+            if (in_array($locationNumber, ['005', '011', '012'])) {
+                $additionalEmails[] = "dgeorgatos@mayesh.com";
+            }
+            
+            // Group 5: Add tdahlson@mayesh.com
+            // Orange County (003), Riverside (006), Bakersfield (007)
+            if (in_array($locationNumber, ['003', '006', '007'])) {
+                $additionalEmails[] = "tdahlson@mayesh.com";
+            }
+            
+            // Special case: Raleigh (027) also gets nbarnhill@mayesh.com
+            if ($locationNumber == '027') {
+                $additionalEmails[] = "nbarnhill@mayesh.com";
+            }
+            
+            // Combine base emails with additional emails
+            if (!empty($additionalEmails)) {
+                $to = $baseEmails . "," . implode(",", $additionalEmails);
+            } else {
+                $to = $baseEmails;
+            }
+            */
+            
+            // TEMPORARY: For now, send to cjones@mayesh.com for testing
             $to = "cjones@mayesh.com";
             $subject = "[KPI Review] " . $_POST['month'] . " " . $_POST['year'] . " KPI Review for " . $_POST['locationName'] . " Submitted!";
             
