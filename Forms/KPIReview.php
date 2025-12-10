@@ -1,23 +1,7 @@
 <?php
-// COMMENTED OUT LOGIN REQUIREMENT - Can be re-enabled later
-// To re-enable login: Remove the session variable setting below and use standard header include
-
-session_start(); // Start session
-
-// Set default session values if not logged in (bypasses login requirement)
-if (!isset($_SESSION['username'])) {
-    $_SESSION['username'] = 'guest';
-    $_SESSION['fullName'] = 'Guest User';
-    $_SESSION['locationName'] = 'Not Specified';
-    $_SESSION['locID'] = '';
-}
-
 $header['pageTitle'] = "Form: Manager KPI Review";
-$header['securityModuleName'] = 'form_kpi_review';
-
-// Temporarily bypass login by setting session before header include
-// The header will see $_SESSION['username'] is set and won't redirect
-require("../includes/config.inc.php");
+$header['securityModuleName'] = 'report_scorecard';
+require("../includes/header.inc.php");
 require("../includes/functions.inc.php");
 
 // Try to include Mail.php - it should be available via PEAR
@@ -65,112 +49,61 @@ if (!$mimeLoaded) {
     $mimeLoaded = class_exists('Mail_mime');
 }
 
-// Include header HTML structure manually to bypass login check
-// TO RE-ENABLE LOGIN: Replace this section with: require("../includes/header.inc.php");
 ?>
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="description" content="Manager KPI Review">
-    <meta name="author" content="Chris Cunningham">
-    <link rel="stylesheet" href="/node_modules/bootstrap/dist/css/bootstrap.css">
-    <link  rel="stylesheet" href="/node_modules/bootstrap-icons/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="/node_modules/font-awesome/css/font-awesome.min.css">
-    <link rel="stylesheet" href="/node_modules/datatables.net-dt/css/jquery.dataTables.min.css">
-    <link rel="stylesheet" href="/css/branchtools.css">
-    <link rel="stylesheet" href="/node_modules/jquery-ui/dist/themes/start/jquery-ui.min.css">
-    <script src="/node_modules/jquery/dist/jquery.min.js"></script>
-    <script src="/node_modules/jquery-ui/dist/jquery-ui.min.js"></script>
-    <script src="/node_modules/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/node_modules/@popperjs/core/dist/umd/popper.js"></script>
-    <Script src="/node_modules/datatables.net/js/jquery.dataTables.min.js"></Script>
-    <script src="https://cdn.jsdelivr.net/npm/gasparesganga-jquery-loading-overlay@2.1.6/dist/loadingoverlay.min.js"></script>
-    <title><?php echo "BranchTools: ".$header['pageTitle'];?></title>
-    <style>
-      .kpi-section-header {
-        color: white;
-        font-weight: bold;
-        padding: 10px;
-        margin-bottom: 15px;
-      }
-      .positive-results {
-        background-color: #28a745; /* Green */
-      }
-      .challenges {
-        background-color: #fd7e14; /* Orange */
-      }
-      .morale-meter {
-        background-color: #17a2b8; /* Light blue */
-      }
-      .kpi-table {
-        width: 100%;
-        margin-bottom: 10px;
-        font-size: 0.9rem;
-      }
-      .kpi-table th {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        padding: 5px 8px;
-        text-align: left;
-        font-size: 0.85rem;
-      }
-      .kpi-table td {
-        border: 1px solid #dee2e6;
-        padding: 4px 6px;
-      }
-      .kpi-table input[type="text"],
-      .kpi-table textarea {
-        width: 100%;
-        border: none;
-        padding: 3px 5px;
-        font-size: 0.9rem;
-      }
-      .kpi-table textarea {
-        resize: vertical;
-        min-height: 40px;
-      }
-      .subsection-header {
-        font-weight: bold;
-        background-color: #e9ecef;
-        padding: 4px 8px;
-        margin-bottom: 8px;
-        font-size: 0.9rem;
-      }
-      .section-container {
-        margin-bottom: 20px;
-      }
-    </style>
-  </head>
-  <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark d-print-none">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="/index.php"><img src="/images/CircleLogo.png" style="height:26px"></a>
-        <div class="navbar-brand"><b style="font-size:24px;color:#CFDE00;">BranchTools</b></div>
-        <div class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="/Forms/KPIReview.php"><span class="bi bi-graph-up" style="vertical-align: middle;"> Manager KPI Review</a></span>
-          </li>
-        </div>
-      </div>
-    </nav>
-    <div class="d-print-none">
-      <div class="p-2 border-bottom border-dark text-light" style="background-color:#505050">
-        <div class="row">
-          <div class="col-10">
-            <?php
-            if(isset($_SESSION['username'])) {
-              echo "&nbsp;Welcome <b>".$_SESSION['fullName']."</b>";
-              if (!empty($_SESSION['locationName']) && $_SESSION['locationName'] != 'Not Specified') {
-                echo " from <b>Mayesh ". $_SESSION['locationName'] . "</b>";
-              }
-            }
-            ?>
-          </div>
-        </div>
-      </div>
-    </div>
+<style>
+  .kpi-section-header {
+    color: white;
+    font-weight: bold;
+    padding: 10px;
+    margin-bottom: 15px;
+  }
+  .positive-results {
+    background-color: #28a745; /* Green */
+  }
+  .challenges {
+    background-color: #fd7e14; /* Orange */
+  }
+  .morale-meter {
+    background-color: #17a2b8; /* Light blue */
+  }
+  .kpi-table {
+    width: 100%;
+    margin-bottom: 10px;
+    font-size: 0.9rem;
+  }
+  .kpi-table th {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 5px 8px;
+    text-align: left;
+    font-size: 0.85rem;
+  }
+  .kpi-table td {
+    border: 1px solid #dee2e6;
+    padding: 4px 6px;
+  }
+  .kpi-table input[type="text"],
+  .kpi-table textarea {
+    width: 100%;
+    border: none;
+    padding: 3px 5px;
+    font-size: 0.9rem;
+  }
+  .kpi-table textarea {
+    resize: vertical;
+    min-height: 40px;
+  }
+  .subsection-header {
+    font-weight: bold;
+    background-color: #e9ecef;
+    padding: 4px 8px;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+  }
+  .section-container {
+    margin-bottom: 20px;
+  }
+</style>
 
 <?php
 // Get location number from session (set during login)

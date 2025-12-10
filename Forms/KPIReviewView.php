@@ -62,15 +62,15 @@ if (!$isAjax) {
     <?php
 }
 
-// TEMPORARILY BYPASS ACCESS CHECK FOR TESTING
-// TODO: Re-enable access check once module is set up
-// Check module access - TEMPORARILY DISABLED
-/*
-if (getAccess($_SESSION['username'], 'form_kpi_review') == 0 && getAccess($_SESSION['username'], 'admin') == 0) {
-    echo '<div class="alert alert-danger">You do not have permission to view KPI Reviews.</div>';
+// Check module access - use report_scorecard permissions (same as KPI Dashboard)
+if (getAccess($_SESSION['username'], 'report_scorecard') == 0 && getAccess($_SESSION['username'], 'admin') == 0) {
+    if ($isAjax) {
+        echo '<div class="alert alert-danger">You do not have permission to view KPI Reviews.</div>';
+    } else {
+        echo '<div class="alert alert-danger mt-4"><h4>Access Denied</h4><p>You do not have permission to view KPI Reviews.</p><br><a href="../../" class="btn btn-secondary">Return Home</a></div>';
+    }
     exit;
 }
-*/
 
 $entryId = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
