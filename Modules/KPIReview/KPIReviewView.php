@@ -1,7 +1,7 @@
 <?php
 // Can be used as AJAX endpoint OR standalone page
-require_once(__DIR__ . '/../includes/config.inc.php');
-require_once(__DIR__ . '/../includes/security.inc.php');
+require_once(__DIR__ . '/../../includes/config.inc.php');
+require_once(__DIR__ . '/../../includes/security.inc.php');
 
 session_start();
 
@@ -53,7 +53,7 @@ if (!$isAjax) {
             <a class="navbar-brand" href="/index.php"><img src="/images/CircleLogo.png" style="height:26px"></a>
             <div class="navbar-brand"><b style="font-size:24px;color:#CFDE00;">BranchTools</b></div>
             <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/Forms/KPIReviewManage.php"><span class="bi bi-arrow-left"></span> Back to Management</a>
+                <a class="nav-link" href="/Modules/KPIReview/KPIReviewManage.php"><span class="bi bi-arrow-left"></span> Back to Management</a>
             </div>
         </div>
     </nav>
@@ -84,6 +84,15 @@ if ($conn->connect_error) {
     echo '<div class="alert alert-danger">Database connection failed.</div>';
     exit;
 }
+
+// Define KPI names - Must match the names in index.php
+$kpiNames = [
+    1 => 'EBITDA',
+    2 => 'Gross Margin',
+    3 => 'GM vs Payroll',
+    4 => 'Payroll % of Sales',
+    5 => 'Sales'
+];
 
 // TEMPORARILY BYPASS LOCATION ACCESS CHECK FOR TESTING
 // Fetch entry (temporarily without location filter for testing)
@@ -173,11 +182,11 @@ if ($result && $result->num_rows > 0) {
     echo '<table class="kpi-table">';
     echo '<thead><tr><th style="width: 30%;">KPI</th><th style="width: 70%;">Comments</th></tr></thead>';
     echo '<tbody>';
-    for ($i = 1; $i <= 3; $i++) {
-        $kpi = $row['positive_month_kpi_' . $i] ?? '';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
         $comments = $row['positive_month_comments_' . $i] ?? '';
         echo '<tr>';
-        echo '<td>' . htmlspecialchars($kpi ?: '') . '</td>';
+        echo '<td>' . htmlspecialchars($kpiName) . '</td>';
         echo '<td>' . nl2br(htmlspecialchars($comments ?: '')) . '</td>';
         echo '</tr>';
     }
@@ -194,11 +203,11 @@ if ($result && $result->num_rows > 0) {
     echo '<table class="kpi-table">';
     echo '<thead><tr><th style="width: 30%;">KPI</th><th style="width: 70%;">Comments</th></tr></thead>';
     echo '<tbody>';
-    for ($i = 1; $i <= 3; $i++) {
-        $kpi = $row['positive_ytd_kpi_' . $i] ?? '';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
         $comments = $row['positive_ytd_comments_' . $i] ?? '';
         echo '<tr>';
-        echo '<td>' . htmlspecialchars($kpi ?: '') . '</td>';
+        echo '<td>' . htmlspecialchars($kpiName) . '</td>';
         echo '<td>' . nl2br(htmlspecialchars($comments ?: '')) . '</td>';
         echo '</tr>';
     }
@@ -224,11 +233,11 @@ if ($result && $result->num_rows > 0) {
     echo '<table class="kpi-table">';
     echo '<thead><tr><th style="width: 30%;">KPI</th><th style="width: 70%;">Comments</th></tr></thead>';
     echo '<tbody>';
-    for ($i = 1; $i <= 3; $i++) {
-        $kpi = $row['challenge_month_kpi_' . $i] ?? '';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
         $comments = $row['challenge_month_comments_' . $i] ?? '';
         echo '<tr>';
-        echo '<td>' . htmlspecialchars($kpi ?: '') . '</td>';
+        echo '<td>' . htmlspecialchars($kpiName) . '</td>';
         echo '<td>' . nl2br(htmlspecialchars($comments ?: '')) . '</td>';
         echo '</tr>';
     }
@@ -245,11 +254,11 @@ if ($result && $result->num_rows > 0) {
     echo '<table class="kpi-table">';
     echo '<thead><tr><th style="width: 30%;">KPI</th><th style="width: 70%;">Comments</th></tr></thead>';
     echo '<tbody>';
-    for ($i = 1; $i <= 3; $i++) {
-        $kpi = $row['challenge_ytd_kpi_' . $i] ?? '';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
         $comments = $row['challenge_ytd_comments_' . $i] ?? '';
         echo '<tr>';
-        echo '<td>' . htmlspecialchars($kpi ?: '') . '</td>';
+        echo '<td>' . htmlspecialchars($kpiName) . '</td>';
         echo '<td>' . nl2br(htmlspecialchars($comments ?: '')) . '</td>';
         echo '</tr>';
     }

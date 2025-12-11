@@ -1,30 +1,37 @@
 <?php
-$header['pageTitle'] = "KPI Review Management";
-$header['securityModuleName'] = 'report_scorecard';
-require("../includes/header.inc.php");
-require("../includes/functions.inc.php");
-?>
-
-<div class="p-md-2 m-md-2 bg-white">
-<div class="container">
-<h3 class="border-bottom mb-4"> <span class="bi bi-graph-up" style="vertical-align: middle;"> Manager KPI Review Management</h3>
-
-<?php
-// Handle draft deletion
+// Handle draft deletion - MUST be before any HTML output or header includes
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] == 'delete_draft') {
+    // Load config and start session before header output
+    require("../../includes/config.inc.php");
+    
+    // Start session if not already started
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    
+    // Set JSON header before any output
+    header('Content-Type: application/json');
+    
     $conn = new mysqli($config['dbServer'], $config['dbUser'], $config['dbPassword'], $config['dbName']);
     
     if ($conn->connect_error) {
-        die(json_encode(['success' => false, 'error' => 'Database connection failed']));
+        echo json_encode(['success' => false, 'error' => 'Database connection failed']);
+        exit;
     }
     
-    $draftId = intval($_POST['draft_id']);
+    $draftId = intval($_POST['draft_id'] ?? 0);
     $username = isset($_SESSION['username']) ? $_SESSION['username'] : '';
     
+    if ($draftId <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Invalid draft ID']);
+        $conn->close();
+        exit;
+    }
+    
     // Verify draft belongs to current user and is a draft
-        // Check for both 'guest' and 'Guest User' to handle old entries
-        $usernameEscaped = $conn->real_escape_string($username);
-        $checkSql = "SELECT id FROM kpiReview WHERE id = $draftId AND status = 'DRAFT' AND (submitted_by = '$usernameEscaped' OR submitted_by = 'Guest User') LIMIT 1";
+    // Check for both 'guest' and 'Guest User' to handle old entries
+    $usernameEscaped = $conn->real_escape_string($username);
+    $checkSql = "SELECT id FROM kpiReview WHERE id = $draftId AND status = 'DRAFT' AND (submitted_by = '$usernameEscaped' OR submitted_by = 'Guest User') LIMIT 1";
     $checkResult = $conn->query($checkSql);
     
     if ($checkResult && $checkResult->num_rows > 0) {
@@ -42,8 +49,52 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     exit;
 }
 
+$header['pageTitle'] = "KPI Review Management";
+$header['securityModuleName'] = 'report_scorecard';
+require("../../includes/header.inc.php");
+?>
+<style>
+    /* Ensure action buttons stay on one line */
+    #kpiReviewTable td:last-child {
+        white-space: nowrap;
+    }
+    #kpiReviewTable td:last-child .btn {
+        margin-right: 0.25rem;
+    }
+</style>
+
+<div class="p-md-2 m-md-2 bg-white">
+<div class="container">
+<div class="d-flex justify-content-between align-items-center border-bottom mb-4 mt-4">
+    <h3 class="mb-0"><span class="bi bi-graph-up" style="vertical-align: middle;"></span>KPI Review Management</h3>
+    <a href="index.php" class="btn btn-primary" title="Go back to KPI Review form"><span class="bi bi-arrow-left"></span> Back to KPI Review</a>
+</div>
+
+<?php
+
 // Check for user's drafts
 $userDrafts = [];
+// Create database connection if not already available from header.inc.php
+// Always create a fresh connection to avoid issues with closed connections from header.inc.php
+if (!isset($conn)) {
+    $conn = new mysqli($config['dbServer'], $config['dbUser'], $config['dbPassword'], $config['dbName']);
+    if ($conn->connect_error) {
+        $conn = null; // Set to null if connection failed
+    }
+} else {
+    // If $conn exists but might be closed, create a new one
+    try {
+        // Try to access a property that will throw if connection is closed
+        $test = $conn->server_info;
+    } catch (Error $e) {
+        // Connection is closed, create a new one
+        $conn = new mysqli($config['dbServer'], $config['dbUser'], $config['dbPassword'], $config['dbName']);
+        if ($conn->connect_error) {
+            $conn = null;
+        }
+    }
+}
+
 if ($conn && !$conn->connect_error && isset($_SESSION['username'])) {
     $username = $_SESSION['username'];
         // Check for both 'guest' and 'Guest User' to handle old entries
@@ -61,15 +112,6 @@ if ($conn && !$conn->connect_error && isset($_SESSION['username'])) {
     }
 }
 
-// Show "View Drafts" button if user has drafts
-if (!empty($userDrafts)) {
-    $draftCount = count($userDrafts);
-    echo '<div class="mb-3 text-end">';
-    echo '<button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#draftsModalManage">';
-    echo '<span class="bi bi-file-earmark-text"></span> View Drafts <span class="badge bg-dark">' . $draftCount . '</span>';
-    echo '</button>';
-    echo '</div>';
-}
 ?>
 
 <!-- Search/Filter Section -->
@@ -78,16 +120,16 @@ if (!empty($userDrafts)) {
         <h5 class="mb-0"><span class="bi bi-funnel"></span> Filters</h5>
     </div>
     <div class="card-body">
-        <div class="row">
+        <div class="row align-items-end">
             <div class="col-md-3">
                 <label for="filterLocation" class="form-label"><b>Location:</b></label>
                 <select id="filterLocation" class="form-control">
                     <option value="">All Locations</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label for="filterMonth" class="form-label"><b>Month:</b></label>
-                <select id="filterMonth" class="form-control">
+                <select id="filterMonth" class="form-control form-control-sm">
                     <option value="">All Months</option>
                     <option value="January">January</option>
                     <option value="February">February</option>
@@ -103,93 +145,106 @@ if (!empty($userDrafts)) {
                     <option value="December">December</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label for="filterYear" class="form-label"><b>Year:</b></label>
-                <input type="number" id="filterYear" class="form-control" placeholder="e.g., 2025" min="2020" max="2099">
+                <input type="number" id="filterYear" class="form-control form-control-sm" placeholder="e.g., 2025" min="2020" max="2099">
             </div>
             <div class="col-md-2">
                 <label for="filterSubmittedBy" class="form-label"><b>Submitted By:</b></label>
-                <input type="text" id="filterSubmittedBy" class="form-control" placeholder="Search by name">
+                <input type="text" id="filterSubmittedBy" class="form-control form-control-sm" placeholder="Search by name">
             </div>
-        <!-- Status filter removed - only showing published entries -->
-        </div>
-        <div class="row mt-3">
-            <div class="col-md-12">
-                <button type="button" id="clearFilters" class="btn btn-secondary btn-sm">Clear Filters</button>
+            <div class="col-md-2">
+                <label for="filterStatus" class="form-label"><b>Status:</b></label>
+                <select id="filterStatus" class="form-control form-control-sm">
+                    <option value="">All Statuses</option>
+                    <option value="PUBLISHED">Published</option>
+                    <option value="DRAFT">Draft</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="button" id="clearFilters" class="btn btn-secondary btn-sm w-100">Clear</button>
             </div>
         </div>
     </div>
 </div>
 
 <?php
-// Get user's accessible locations from userLocationAccess table
-$conn = new mysqli($config['dbServer'], $config['dbUser'], $config['dbPassword'], $config['dbName']);
-if ($conn->connect_error) {
-    echo '<div class="alert alert-danger">Database connection failed: ' . htmlspecialchars($conn->connect_error) . '</div>';
-    $conn = null; // Set to null so we can check later
+// Get user's accessible locations using the same logic as MayeshMarketShipments.php
+// Reuse existing connection if available, otherwise create a new one
+if (!isset($conn) || !$conn || (is_object($conn) && $conn->connect_error)) {
+    $conn = new mysqli($config['dbServer'], $config['dbUser'], $config['dbPassword'], $config['dbName']);
+    if ($conn->connect_error) {
+        echo '<div class="alert alert-danger">Database connection failed: ' . htmlspecialchars($conn->connect_error) . '</div>';
+        $conn = null; // Set to null so we can check later
+    }
 }
 
-// Get locations user has access to (including their primary location)
+// Get locations user has access to - same query as buildLocationsSelect function
+// Only get locations from userLocationAccess table (matching MayeshMarketShipments.php logic)
 $accessibleLocations = [];
 if ($conn && !$conn->connect_error) {
-    $sql = "SELECT DISTINCT l.locationNumber, l.name 
-            FROM locations l
-            INNER JOIN userLocationAccess u ON l.locationNumber = u.locationId 
-            WHERE u.username = '" . $conn->real_escape_string($_SESSION['username']) . "'
-            UNION
-            SELECT locationNumber, name FROM locations WHERE locationNumber = '" . $conn->real_escape_string($_SESSION['locID'] ?? '') . "'
-            ORDER BY name ASC";
+    $sql = "SELECT userLocationAccess.username, userLocationAccess.locationid, locations.name 
+            FROM userLocationAccess 
+            INNER JOIN locations ON userLocationAccess.locationid = locations.locationNumber 
+            WHERE userLocationAccess.username = '" . $conn->real_escape_string($_SESSION['username']) . "' 
+            ORDER BY locations.name";
     $result = $conn->query($sql);
     
     if ($result && $result->num_rows > 0) {
         while($row = $result->fetch_assoc()) {
-            $accessibleLocations[] = $row;
+            $accessibleLocations[] = [
+                'locationNumber' => $row['locationid'],
+                'name' => $row['name']
+            ];
         }
     }
-}
-
-// If user has admin access, show all locations
-$isAdmin = false;
-if ($conn && !$conn->connect_error && function_exists('getAccess')) {
-    $isAdmin = getAccess($_SESSION['username'], 'admin') == 1;
-}
-if ($isAdmin && $conn && !$conn->connect_error) {
-    $sql = "SELECT locationNumber, name FROM locations ORDER BY name ASC";
-    $result = $conn->query($sql);
-    $accessibleLocations = [];
-    if ($result && $result->num_rows > 0) {
-        while($row = $result->fetch_assoc()) {
-            $accessibleLocations[] = $row;
+    
+    // Also include the user's primary location from session (like MayeshMarketShipments.php does)
+    if (!empty($_SESSION['locID']) && !empty($_SESSION['locationName'])) {
+        // Check if primary location is already in the list
+        $primaryLocationExists = false;
+        foreach ($accessibleLocations as $loc) {
+            if ($loc['locationNumber'] == $_SESSION['locID']) {
+                $primaryLocationExists = true;
+                break;
+            }
+        }
+        
+        // If not already in list, add it at the beginning
+        if (!$primaryLocationExists) {
+            array_unshift($accessibleLocations, [
+                'locationNumber' => $_SESSION['locID'],
+                'name' => $_SESSION['locationName']
+            ]);
         }
     }
 }
 
 // Build location filter for SQL query
-// TEMPORARILY: For testing, show all entries if user has no location access
+// Always filter by accessible locations - if user has no accessible locations, show nothing
 $locationFilter = "";
 if ($conn && !$conn->connect_error) {
-    if (!$isAdmin && !empty($accessibleLocations)) {
+    if (!empty($accessibleLocations)) {
         $locationNumbers = array_column($accessibleLocations, 'locationNumber');
         if (!empty($locationNumbers)) {
             $locationFilter = " AND location_number IN ('" . implode("','", array_map(function($loc) use ($conn) {
                 return $conn->real_escape_string($loc);
             }, $locationNumbers)) . "')";
+        } else {
+            // User has no accessible locations - show nothing
+            $locationFilter = " AND 1=0"; // Always false condition
         }
-    }
-    // If no accessible locations and not admin, show all for testing (remove this later)
-    if (!$isAdmin && empty($accessibleLocations)) {
-        $locationFilter = ""; // Show all entries for testing
+    } else {
+        // User has no accessible locations - show nothing
+        $locationFilter = " AND 1=0"; // Always false condition
     }
 }
 
-// Fetch KPI Review entries
+// Fetch KPI Review entries - show both PUBLISHED and DRAFT entries
 $allRows = [];
 if ($conn && !$conn->connect_error) {
-    // Default to showing only PUBLISHED entries, unless filter says otherwise
-    // Only show published entries
-    $statusFilter = " AND status = 'PUBLISHED'";
-    
-    $sql = "SELECT * FROM kpiReview WHERE 1=1" . $locationFilter . $statusFilter . " ORDER BY created_at DESC, year DESC, month DESC";
+    // Show both PUBLISHED and DRAFT entries (status filter can be applied via DataTable)
+    $sql = "SELECT * FROM kpiReview WHERE 1=1" . $locationFilter . " ORDER BY status ASC, created_at DESC, year DESC, month DESC";
     $result = $conn->query($sql);
     
     // Debug: Check if query worked
@@ -258,7 +313,7 @@ foreach ($allRows as $row) {
                         
                         if ($isDraft) {
                             // For drafts, show Edit and Delete buttons
-                            echo '<a href="KPIReview.php?draft=' . $row['id'] . '" class="btn btn-sm btn-warning me-1" title="Edit Draft"><span class="bi bi-pencil"></span> Edit</a>';
+                            echo '<a href="index.php?draft=' . $row['id'] . '" class="btn btn-sm btn-warning me-1" title="Edit Draft"><span class="bi bi-pencil"></span></a>';
                             // Only show delete if it's the current user's draft
                             if (isset($_SESSION['username']) && $row['submitted_by'] == $_SESSION['username']) {
                                 echo '<button type="button" class="btn btn-sm btn-danger delete-draft me-1" data-draft-id="' . $row['id'] . '" data-draft-name="' . htmlspecialchars($row['location_name'] . ' - ' . $row['month'] . ' ' . $row['year']) . '" title="Delete Draft"><span class="bi bi-trash"></span></button>';
@@ -266,7 +321,7 @@ foreach ($allRows as $row) {
                         }
                         
                         echo '<button class="btn btn-sm btn-info view-entry me-1" data-id="' . $row['id'] . '" title="View Details"><span class="bi bi-eye"></span></button>';
-                        echo '<a href="KPIReviewView.php?id=' . $row['id'] . '" target="_blank" class="btn btn-sm btn-secondary" title="Open in New Tab"><span class="bi bi-box-arrow-up-right"></span></a>';
+                        echo '<a href="index.php?id=' . $row['id'] . '" target="_blank" class="btn btn-sm btn-secondary" title="Open in New Tab"><span class="bi bi-box-arrow-up-right"></span></a>';
                         echo '</td>';
                         echo '</tr>';
                 }
@@ -325,11 +380,11 @@ $(document).ready(function() {
         "columnDefs": [
             { "orderable": false, "targets": [8] }, // Disable sorting on Actions column
             { "width": "5%", "targets": [0] }, // ID column
-            { "width": "20%", "targets": [1] }, // Location column
-            { "width": "10%", "targets": [2, 3] }, // Month and Year columns
-            { "width": "15%", "targets": [4, 5] }, // Branch Manager and Submitted By columns
+            { "width": "18%", "targets": [1] }, // Location column
+            { "width": "9%", "targets": [2, 3] }, // Month and Year columns
+            { "width": "13%", "targets": [4, 5] }, // Branch Manager and Submitted By columns
             { "width": "8%", "targets": [6, 7] }, // Status and Submitted Date columns
-            { "width": "15%", "targets": [8] } // Actions column
+            { "width": "20%", "targets": [8] } // Actions column - increased to fit all buttons
         ],
         "language": {
             "emptyTable": "No KPI Review submissions found."
@@ -362,14 +417,19 @@ $(document).ready(function() {
         table.column(5).search(this.value).draw();
     });
     
+    // Filter by status
+    $('#filterStatus').on('change', function() {
+        table.column(6).search(this.value).draw();
+    });
+    
     // Clear filters
     $('#clearFilters').on('click', function() {
         $('#filterLocation').val('');
         $('#filterMonth').val('');
         $('#filterYear').val('');
         $('#filterSubmittedBy').val('');
-        // Status filter removed
-        window.location.href = window.location.pathname; // Reload with default status
+        $('#filterStatus').val('');
+        table.search('').columns().search('').draw();
     });
     
     // View entry details
@@ -403,7 +463,7 @@ $(document).ready(function() {
             button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
             
             $.ajax({
-                url: 'KPIReviewManage.php',
+                url: 'index.php',
                 method: 'POST',
                 data: {
                     action: 'delete_draft',
@@ -447,7 +507,7 @@ if (!empty($userDrafts)) {
     echo '<p class="text-muted mb-3">You have <strong>' . count($userDrafts) . '</strong> saved draft(s). Click on a draft to continue editing:</p>';
     echo '<div class="list-group">';
     foreach ($userDrafts as $draft) {
-        $draftUrl = 'KPIReview.php?draft=' . $draft['id'];
+        $draftUrl = 'index.php?draft=' . $draft['id'];
         $lastUpdated = date('m/d/Y g:i A', strtotime($draft['updated_at']));
         echo '<div class="list-group-item">';
         echo '<div class="d-flex w-100 justify-content-between align-items-center">';
@@ -458,7 +518,7 @@ if (!empty($userDrafts)) {
         echo '<small class="text-muted">LOC #' . htmlspecialchars($draft['location_number']) . ' | Last updated: ' . $lastUpdated . '</small>';
         echo '</div>';
         echo '<div class="ms-3">';
-        echo '<a href="' . htmlspecialchars($draftUrl) . '" class="btn btn-sm btn-warning me-2"><span class="bi bi-pencil"></span> Edit</a>';
+        echo '<a href="' . htmlspecialchars($draftUrl) . '" class="btn btn-sm btn-warning me-2" title="Edit Draft"><span class="bi bi-pencil"></span></a>';
         echo '<button type="button" class="btn btn-sm btn-danger delete-draft" data-draft-id="' . $draft['id'] . '" data-draft-name="' . htmlspecialchars($draft['location_name'] . ' - ' . $draft['month'] . ' ' . $draft['year']) . '"><span class="bi bi-trash"></span> Delete</button>';
         echo '</div>';
         echo '</div>';

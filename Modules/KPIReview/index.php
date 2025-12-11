@@ -1,8 +1,7 @@
 <?php
 $header['pageTitle'] = "Form: Manager KPI Review";
 $header['securityModuleName'] = 'report_scorecard';
-require("../includes/header.inc.php");
-require("../includes/functions.inc.php");
+require("../../includes/header.inc.php");
 
 // Try to include Mail.php - it should be available via PEAR
 // Try multiple possible locations
@@ -103,9 +102,26 @@ if (!$mimeLoaded) {
   .section-container {
     margin-bottom: 20px;
   }
+  .kpi-name-label {
+    font-weight: normal;
+    padding: 4px 6px;
+    background-color: transparent;
+    border: none;
+    vertical-align: top;
+    color: #000;
+  }
 </style>
 
 <?php
+// Define KPI names - Update these as needed
+$kpiNames = [
+    1 => 'EBITDA',
+    2 => 'Gross Margin',
+    3 => 'GM vs Payroll',
+    4 => 'Payroll % of Sales',
+    5 => 'Sales'
+];
+
 // Get location number from session (set during login)
 $locationNumber = isset($_SESSION['locID']) ? $_SESSION['locID'] : '';
 
@@ -151,14 +167,22 @@ if ($draftId > 0) {
     // Check for draft for current location/month/year
     $conn = new mysqli($config['dbServer'], $config['dbUser'], $config['dbPassword'], $config['dbName']);
     if (!$conn->connect_error) {
-            // Check for both 'guest' and 'Guest User' to handle old entries
-            $usernameEscaped = $conn->real_escape_string($_SESSION['username'] ?? '');
-            $draftSql = "SELECT * FROM kpiReview WHERE location_number = '" . $conn->real_escape_string($locationNumber) . "' 
-                         AND month = '" . $conn->real_escape_string($currentMonth) . "' 
-                         AND year = $currentYear 
-                         AND status = 'DRAFT' 
-                         AND (submitted_by = '$usernameEscaped' OR submitted_by = 'Guest User')
-                         LIMIT 1";
+        // Only check for drafts belonging to the current user
+        $usernameEscaped = $conn->real_escape_string($_SESSION['username'] ?? '');
+        
+        // Build the submitted_by condition - only match current user or 'Guest User' if username is empty/guest
+        $submittedByCondition = "submitted_by = '$usernameEscaped'";
+        if (empty($usernameEscaped) || strtolower($usernameEscaped) === 'guest') {
+            // If user is guest, also check for 'Guest User' legacy entries
+            $submittedByCondition = "(submitted_by = '$usernameEscaped' OR submitted_by = 'Guest User')";
+        }
+        
+        $draftSql = "SELECT * FROM kpiReview WHERE location_number = '" . $conn->real_escape_string($locationNumber) . "' 
+                     AND month = '" . $conn->real_escape_string($currentMonth) . "' 
+                     AND year = $currentYear 
+                     AND status = 'DRAFT' 
+                     AND $submittedByCondition
+                     LIMIT 1";
         $draftResult = $conn->query($draftSql);
         if ($draftResult && $draftResult->num_rows > 0) {
             $existingDraft = $draftResult->fetch_assoc();
@@ -171,14 +195,94 @@ if ($_SERVER['REQUEST_METHOD'] <> 'POST') {
 ?>
 <script>
     $(function(){
-    $('#btn_Save').click(function() {
-      $.LoadingOverlay("show");
+    $('#btn_Save').click(function(e) {
+        // Check if form is valid before showing loading overlay
+        var form = $(this).closest('form')[0];
+        if (form && !form.checkValidity()) {
+            // Form is invalid - trigger HTML5 validation
+            form.reportValidity();
+            return false;
+        }
+        // Form is valid - show loading overlay
+        $.LoadingOverlay("show");
+    });
+    
+    // Hide loading overlay if form submission is prevented
+    $('form').on('submit', function(e) {
+        // If form is invalid, hide the overlay that might have been shown
+        var form = this;
+        if (!form.checkValidity()) {
+            $.LoadingOverlay("hide");
+        }
     });
     
     // Add confirmation for Publish button
     $('#btn_Publish').click(function(e) {
         var action = $(this).val();
         if (action === 'publish') {
+            // Validate all fields are filled out
+            var missingFields = [];
+            
+            // Check month
+            if (!$('#month').val()) {
+                missingFields.push('Month');
+            }
+            
+            // Check branch manager
+            if (!$('#branchManager').val() || $('#branchManager').val().trim() === '') {
+                missingFields.push('Branch Manager');
+            }
+            
+            // Check Morale Meter
+            if (!$('#moraleMeter').val()) {
+                missingFields.push('Morale Meter');
+            }
+            
+            // Check Positive Results - Month (5 KPIs)
+            for (var i = 1; i <= 5; i++) {
+                var commentsVal = $('textarea[name="positive_month_comments_' + i + '"]').val();
+                if (!commentsVal || commentsVal.trim() === '') {
+                    missingFields.push('Positive Results - Month KPI ' + i);
+                }
+            }
+            
+            // Check Positive Results - YTD (5 KPIs)
+            for (var i = 1; i <= 5; i++) {
+                var commentsVal = $('textarea[name="positive_ytd_comments_' + i + '"]').val();
+                if (!commentsVal || commentsVal.trim() === '') {
+                    missingFields.push('Positive Results - YTD KPI ' + i);
+                }
+            }
+            
+            // Check Challenges - Month (5 KPIs)
+            for (var i = 1; i <= 5; i++) {
+                var commentsVal = $('textarea[name="challenge_month_comments_' + i + '"]').val();
+                if (!commentsVal || commentsVal.trim() === '') {
+                    missingFields.push('Challenges - Month KPI ' + i);
+                }
+            }
+            
+            // Check Challenges - YTD (5 KPIs)
+            for (var i = 1; i <= 5; i++) {
+                var commentsVal = $('textarea[name="challenge_ytd_comments_' + i + '"]').val();
+                if (!commentsVal || commentsVal.trim() === '') {
+                    missingFields.push('Challenges - YTD KPI ' + i);
+                }
+            }
+            
+            // If any fields are missing, prevent submission
+            if (missingFields.length > 0) {
+                e.preventDefault();
+                var message = 'Please fill out all required fields before publishing:\n\n';
+                missingFields.forEach(function(field) {
+                    message += '• ' + field + '\n';
+                });
+                message += '\nAll KPI fields and their corresponding comments must be completed.';
+                alert(message);
+                return false;
+            }
+            
+            // All fields filled - show confirmation
             if (!confirm('Are you sure you want to publish this KPI Review?\n\nThis will send email notifications and cannot be undone.\n\nClick OK to publish or Cancel to go back.')) {
                 e.preventDefault();
                 return false;
@@ -288,6 +392,11 @@ This form saves your information as you enter it. You can close your browser and
   <h3 class="mb-0" style="line-height: 1.2;"><span class="bi bi-graph-up" style="vertical-align: middle;"></span> Manager KPI Review - LOC #<?php echo htmlspecialchars($locationNumber);?></h3>
   <div class="d-flex align-items-center">
     <?php
+    // Always show "Manage" button to view submitted reviews
+    echo '<a href="Manage.php" class="btn btn-info btn-sm me-2" style="line-height: 1.5;" title="View and manage all submitted KPI reviews">';
+    echo '<span class="bi bi-list-check"></span> Manage Reviews';
+    echo '</a>';
+    
     // Show "View Drafts" button if user has drafts - positioned next to title
     // Also show "Start New Form" button when editing a draft
     if (!empty($userDrafts) || $existingDraft) {
@@ -298,7 +407,7 @@ This form saves your information as you enter it. You can close your browser and
             echo '</button>';
         }
         if ($existingDraft) {
-            echo '<a href="KPIReview.php" class="btn btn-outline-secondary btn-sm" style="line-height: 1.5;"><span class="bi bi-plus-circle"></span> New</a>';
+            echo '<a href="index.php" class="btn btn-outline-secondary btn-sm" style="line-height: 1.5;"><span class="bi bi-plus-circle"></span> New</a>';
         }
     }
     ?>
@@ -351,21 +460,15 @@ This form saves your information as you enter it. You can close your browser and
           </tr>
         </thead>
         <tbody>
+          <?php for ($i = 1; $i <= 5; $i++): ?>
           <tr>
-            <td><input type="text" name="positive_month_kpi_1" placeholder="Enter KPI" value="<?php echo htmlspecialchars($existingDraft ? ($existingDraft['positive_month_kpi_1'] ?? '') : '');?>"></td>
-            <td><textarea name="positive_month_comments_1" rows="2" placeholder="Enter comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['positive_month_comments_1'] ?? '') : '');?></textarea></td>
+            <td class="kpi-name-label"><?php echo htmlspecialchars($kpiNames[$i]); ?></td>
+            <td><textarea name="positive_month_comments_<?php echo $i; ?>" rows="2" placeholder="Enter comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['positive_month_comments_' . $i] ?? '') : '');?></textarea></td>
           </tr>
-          <tr>
-            <td><input type="text" name="positive_month_kpi_2" placeholder="Enter KPI"></td>
-            <td><textarea name="positive_month_comments_2" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
-          <tr>
-            <td><input type="text" name="positive_month_kpi_3" placeholder="Enter KPI"></td>
-            <td><textarea name="positive_month_comments_3" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
+          <?php endfor; ?>
           <tr>
             <td><strong>Other Comments</strong></td>
-            <td><textarea name="positive_month_other" rows="2" placeholder="Enter other comments"></textarea></td>
+            <td><textarea name="positive_month_other" rows="2" placeholder="Enter other comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['positive_month_other'] ?? '') : '');?></textarea></td>
           </tr>
         </tbody>
       </table>
@@ -382,21 +485,15 @@ This form saves your information as you enter it. You can close your browser and
           </tr>
         </thead>
         <tbody>
+          <?php for ($i = 1; $i <= 5; $i++): ?>
           <tr>
-            <td><input type="text" name="positive_ytd_kpi_1" placeholder="Enter KPI"></td>
-            <td><textarea name="positive_ytd_comments_1" rows="2" placeholder="Enter comments"></textarea></td>
+            <td class="kpi-name-label"><?php echo htmlspecialchars($kpiNames[$i]); ?></td>
+            <td><textarea name="positive_ytd_comments_<?php echo $i; ?>" rows="2" placeholder="Enter comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['positive_ytd_comments_' . $i] ?? '') : '');?></textarea></td>
           </tr>
-          <tr>
-            <td><input type="text" name="positive_ytd_kpi_2" placeholder="Enter KPI"></td>
-            <td><textarea name="positive_ytd_comments_2" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
-          <tr>
-            <td><input type="text" name="positive_ytd_kpi_3" placeholder="Enter KPI"></td>
-            <td><textarea name="positive_ytd_comments_3" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
+          <?php endfor; ?>
           <tr>
             <td><strong>Other Comments</strong></td>
-            <td><textarea name="positive_ytd_other" rows="2" placeholder="Enter other comments"></textarea></td>
+            <td><textarea name="positive_ytd_other" rows="2" placeholder="Enter other comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['positive_ytd_other'] ?? '') : '');?></textarea></td>
           </tr>
         </tbody>
       </table>
@@ -422,21 +519,15 @@ This form saves your information as you enter it. You can close your browser and
           </tr>
         </thead>
         <tbody>
+          <?php for ($i = 1; $i <= 5; $i++): ?>
           <tr>
-            <td><input type="text" name="challenge_month_kpi_1" placeholder="Enter KPI"></td>
-            <td><textarea name="challenge_month_comments_1" rows="2" placeholder="Enter comments"></textarea></td>
+            <td class="kpi-name-label"><?php echo htmlspecialchars($kpiNames[$i]); ?></td>
+            <td><textarea name="challenge_month_comments_<?php echo $i; ?>" rows="2" placeholder="Enter comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['challenge_month_comments_' . $i] ?? '') : '');?></textarea></td>
           </tr>
-          <tr>
-            <td><input type="text" name="challenge_month_kpi_2" placeholder="Enter KPI"></td>
-            <td><textarea name="challenge_month_comments_2" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
-          <tr>
-            <td><input type="text" name="challenge_month_kpi_3" placeholder="Enter KPI"></td>
-            <td><textarea name="challenge_month_comments_3" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
+          <?php endfor; ?>
           <tr>
             <td><strong>Other Comments</strong></td>
-            <td><textarea name="challenge_month_other" rows="2" placeholder="Enter other comments"></textarea></td>
+            <td><textarea name="challenge_month_other" rows="2" placeholder="Enter other comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['challenge_month_other'] ?? '') : '');?></textarea></td>
           </tr>
         </tbody>
       </table>
@@ -453,21 +544,15 @@ This form saves your information as you enter it. You can close your browser and
           </tr>
         </thead>
         <tbody>
+          <?php for ($i = 1; $i <= 5; $i++): ?>
           <tr>
-            <td><input type="text" name="challenge_ytd_kpi_1" placeholder="Enter KPI"></td>
-            <td><textarea name="challenge_ytd_comments_1" rows="2" placeholder="Enter comments"></textarea></td>
+            <td class="kpi-name-label"><?php echo htmlspecialchars($kpiNames[$i]); ?></td>
+            <td><textarea name="challenge_ytd_comments_<?php echo $i; ?>" rows="2" placeholder="Enter comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['challenge_ytd_comments_' . $i] ?? '') : '');?></textarea></td>
           </tr>
-          <tr>
-            <td><input type="text" name="challenge_ytd_kpi_2" placeholder="Enter KPI"></td>
-            <td><textarea name="challenge_ytd_comments_2" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
-          <tr>
-            <td><input type="text" name="challenge_ytd_kpi_3" placeholder="Enter KPI"></td>
-            <td><textarea name="challenge_ytd_comments_3" rows="2" placeholder="Enter comments"></textarea></td>
-          </tr>
+          <?php endfor; ?>
           <tr>
             <td><strong>Other Comments</strong></td>
-            <td><textarea name="challenge_ytd_other" rows="2" placeholder="Enter other comments"></textarea></td>
+            <td><textarea name="challenge_ytd_other" rows="2" placeholder="Enter other comments"><?php echo htmlspecialchars($existingDraft ? ($existingDraft['challenge_ytd_other'] ?? '') : '');?></textarea></td>
           </tr>
         </tbody>
       </table>
@@ -478,7 +563,8 @@ This form saves your information as you enter it. You can close your browser and
 <!-- Morale Meter Section -->
 <div class="section-container">
   <div class="kpi-section-header morale-meter">
-    <h4 class="mb-0">Morale Meter</h4>
+  <div class="kpi-section-header morale-meter">
+    <h4 class="mb-0">MORALE METER</h4>
   </div>
   <div class="alert alert-info mt-3">
     <p class="mb-2"><strong>A measure of 'BranchTeam' sentiment. 1 = Poor, 3 = Good, 5 = Excellent</strong></p>
@@ -486,7 +572,7 @@ This form saves your information as you enter it. You can close your browser and
       <div class="col-md-4">
         <div class="form-group">
           <label for="moraleMeter"><b>Select Rating:</b></label>
-          <select name="moraleMeter" id="moraleMeter" class="form-control" required>
+          <select name="moraleMeter" id="moraleMeter" class="form-control">
             <option value="">Select Rating</option>
             <option value="1" <?php echo ($existingDraft && $existingDraft['morale_meter'] == 1) ? 'selected' : '';?>>1 - Poor</option>
             <option value="2" <?php echo ($existingDraft && $existingDraft['morale_meter'] == 2) ? 'selected' : '';?>>2 - Below Average</option>
@@ -499,7 +585,7 @@ This form saves your information as you enter it. You can close your browser and
       <div class="col-md-8">
         <div class="form-group">
           <label for="moraleNotes"><b>Notes:</b></label>
-          <textarea name="moraleNotes" id="moraleNotes" class="form-control" rows="3" placeholder="Enter any additional notes or comments about team morale..."></textarea>
+          <textarea name="moraleNotes" id="moraleNotes" class="form-control" rows="3" placeholder="Enter any additional notes or comments about team morale..."><?php echo htmlspecialchars($existingDraft ? ($existingDraft['morale_notes'] ?? '') : '');?></textarea>
         </div>
       </div>
     </div>
@@ -528,7 +614,7 @@ if (!empty($userDrafts)) {
     echo '<p class="text-muted mb-3">You have <strong>' . count($userDrafts) . '</strong> saved draft(s). Click on a draft to continue editing:</p>';
     echo '<div class="list-group">';
     foreach ($userDrafts as $draft) {
-        $draftUrl = 'KPIReview.php?draft=' . $draft['id'];
+        $draftUrl = 'index.php?draft=' . $draft['id'];
         $lastUpdated = date('m/d/Y g:i A', strtotime($draft['updated_at']));
         $isCurrentDraft = ($existingDraft && $existingDraft['id'] == $draft['id']);
         $itemClass = $isCurrentDraft ? 'list-group-item-warning active' : '';
@@ -591,40 +677,36 @@ if (!empty($userDrafts)) {
     $locationNumber = $conn->real_escape_string($_POST['locationNumber']);
     $submittedBy = $conn->real_escape_string($_POST['supp_Name']);
     
-    // Positive Results - Month
-    $positive_month_kpi_1 = !empty($_POST['positive_month_kpi_1']) ? $conn->real_escape_string($_POST['positive_month_kpi_1']) : NULL;
+    // Positive Results - Month (KPI names are pre-populated, so kpi fields are NULL)
     $positive_month_comments_1 = !empty($_POST['positive_month_comments_1']) ? $conn->real_escape_string($_POST['positive_month_comments_1']) : NULL;
-    $positive_month_kpi_2 = !empty($_POST['positive_month_kpi_2']) ? $conn->real_escape_string($_POST['positive_month_kpi_2']) : NULL;
     $positive_month_comments_2 = !empty($_POST['positive_month_comments_2']) ? $conn->real_escape_string($_POST['positive_month_comments_2']) : NULL;
-    $positive_month_kpi_3 = !empty($_POST['positive_month_kpi_3']) ? $conn->real_escape_string($_POST['positive_month_kpi_3']) : NULL;
     $positive_month_comments_3 = !empty($_POST['positive_month_comments_3']) ? $conn->real_escape_string($_POST['positive_month_comments_3']) : NULL;
+    $positive_month_comments_4 = !empty($_POST['positive_month_comments_4']) ? $conn->real_escape_string($_POST['positive_month_comments_4']) : NULL;
+    $positive_month_comments_5 = !empty($_POST['positive_month_comments_5']) ? $conn->real_escape_string($_POST['positive_month_comments_5']) : NULL;
     $positive_month_other = !empty($_POST['positive_month_other']) ? $conn->real_escape_string($_POST['positive_month_other']) : NULL;
     
-    // Positive Results - YTD
-    $positive_ytd_kpi_1 = !empty($_POST['positive_ytd_kpi_1']) ? $conn->real_escape_string($_POST['positive_ytd_kpi_1']) : NULL;
+    // Positive Results - YTD (KPI names are pre-populated, so kpi fields are NULL)
     $positive_ytd_comments_1 = !empty($_POST['positive_ytd_comments_1']) ? $conn->real_escape_string($_POST['positive_ytd_comments_1']) : NULL;
-    $positive_ytd_kpi_2 = !empty($_POST['positive_ytd_kpi_2']) ? $conn->real_escape_string($_POST['positive_ytd_kpi_2']) : NULL;
     $positive_ytd_comments_2 = !empty($_POST['positive_ytd_comments_2']) ? $conn->real_escape_string($_POST['positive_ytd_comments_2']) : NULL;
-    $positive_ytd_kpi_3 = !empty($_POST['positive_ytd_kpi_3']) ? $conn->real_escape_string($_POST['positive_ytd_kpi_3']) : NULL;
     $positive_ytd_comments_3 = !empty($_POST['positive_ytd_comments_3']) ? $conn->real_escape_string($_POST['positive_ytd_comments_3']) : NULL;
+    $positive_ytd_comments_4 = !empty($_POST['positive_ytd_comments_4']) ? $conn->real_escape_string($_POST['positive_ytd_comments_4']) : NULL;
+    $positive_ytd_comments_5 = !empty($_POST['positive_ytd_comments_5']) ? $conn->real_escape_string($_POST['positive_ytd_comments_5']) : NULL;
     $positive_ytd_other = !empty($_POST['positive_ytd_other']) ? $conn->real_escape_string($_POST['positive_ytd_other']) : NULL;
     
-    // Challenges - Month
-    $challenge_month_kpi_1 = !empty($_POST['challenge_month_kpi_1']) ? $conn->real_escape_string($_POST['challenge_month_kpi_1']) : NULL;
+    // Challenges - Month (KPI names are pre-populated, so kpi fields are NULL)
     $challenge_month_comments_1 = !empty($_POST['challenge_month_comments_1']) ? $conn->real_escape_string($_POST['challenge_month_comments_1']) : NULL;
-    $challenge_month_kpi_2 = !empty($_POST['challenge_month_kpi_2']) ? $conn->real_escape_string($_POST['challenge_month_kpi_2']) : NULL;
     $challenge_month_comments_2 = !empty($_POST['challenge_month_comments_2']) ? $conn->real_escape_string($_POST['challenge_month_comments_2']) : NULL;
-    $challenge_month_kpi_3 = !empty($_POST['challenge_month_kpi_3']) ? $conn->real_escape_string($_POST['challenge_month_kpi_3']) : NULL;
     $challenge_month_comments_3 = !empty($_POST['challenge_month_comments_3']) ? $conn->real_escape_string($_POST['challenge_month_comments_3']) : NULL;
+    $challenge_month_comments_4 = !empty($_POST['challenge_month_comments_4']) ? $conn->real_escape_string($_POST['challenge_month_comments_4']) : NULL;
+    $challenge_month_comments_5 = !empty($_POST['challenge_month_comments_5']) ? $conn->real_escape_string($_POST['challenge_month_comments_5']) : NULL;
     $challenge_month_other = !empty($_POST['challenge_month_other']) ? $conn->real_escape_string($_POST['challenge_month_other']) : NULL;
     
-    // Challenges - YTD
-    $challenge_ytd_kpi_1 = !empty($_POST['challenge_ytd_kpi_1']) ? $conn->real_escape_string($_POST['challenge_ytd_kpi_1']) : NULL;
+    // Challenges - YTD (KPI names are pre-populated, so kpi fields are NULL)
     $challenge_ytd_comments_1 = !empty($_POST['challenge_ytd_comments_1']) ? $conn->real_escape_string($_POST['challenge_ytd_comments_1']) : NULL;
-    $challenge_ytd_kpi_2 = !empty($_POST['challenge_ytd_kpi_2']) ? $conn->real_escape_string($_POST['challenge_ytd_kpi_2']) : NULL;
     $challenge_ytd_comments_2 = !empty($_POST['challenge_ytd_comments_2']) ? $conn->real_escape_string($_POST['challenge_ytd_comments_2']) : NULL;
-    $challenge_ytd_kpi_3 = !empty($_POST['challenge_ytd_kpi_3']) ? $conn->real_escape_string($_POST['challenge_ytd_kpi_3']) : NULL;
     $challenge_ytd_comments_3 = !empty($_POST['challenge_ytd_comments_3']) ? $conn->real_escape_string($_POST['challenge_ytd_comments_3']) : NULL;
+    $challenge_ytd_comments_4 = !empty($_POST['challenge_ytd_comments_4']) ? $conn->real_escape_string($_POST['challenge_ytd_comments_4']) : NULL;
+    $challenge_ytd_comments_5 = !empty($_POST['challenge_ytd_comments_5']) ? $conn->real_escape_string($_POST['challenge_ytd_comments_5']) : NULL;
     $challenge_ytd_other = !empty($_POST['challenge_ytd_other']) ? $conn->real_escape_string($_POST['challenge_ytd_other']) : NULL;
     
     // Morale Meter
@@ -664,33 +746,49 @@ if (!empty($userDrafts)) {
         $publishedAt = ($status == 'PUBLISHED') ? ", published_at = NOW()" : "";
         $sql = "UPDATE kpiReview SET
             branch_manager = " . ($branchManager ? "'$branchManager'" : "NULL") . ",
-            positive_month_kpi_1 = " . ($positive_month_kpi_1 ? "'$positive_month_kpi_1'" : "NULL") . ",
+            positive_month_kpi_1 = NULL,
             positive_month_comments_1 = " . ($positive_month_comments_1 ? "'$positive_month_comments_1'" : "NULL") . ",
-            positive_month_kpi_2 = " . ($positive_month_kpi_2 ? "'$positive_month_kpi_2'" : "NULL") . ",
+            positive_month_kpi_2 = NULL,
             positive_month_comments_2 = " . ($positive_month_comments_2 ? "'$positive_month_comments_2'" : "NULL") . ",
-            positive_month_kpi_3 = " . ($positive_month_kpi_3 ? "'$positive_month_kpi_3'" : "NULL") . ",
+            positive_month_kpi_3 = NULL,
             positive_month_comments_3 = " . ($positive_month_comments_3 ? "'$positive_month_comments_3'" : "NULL") . ",
+            positive_month_kpi_4 = NULL,
+            positive_month_comments_4 = " . ($positive_month_comments_4 ? "'$positive_month_comments_4'" : "NULL") . ",
+            positive_month_kpi_5 = NULL,
+            positive_month_comments_5 = " . ($positive_month_comments_5 ? "'$positive_month_comments_5'" : "NULL") . ",
             positive_month_other = " . ($positive_month_other ? "'$positive_month_other'" : "NULL") . ",
-            positive_ytd_kpi_1 = " . ($positive_ytd_kpi_1 ? "'$positive_ytd_kpi_1'" : "NULL") . ",
+            positive_ytd_kpi_1 = NULL,
             positive_ytd_comments_1 = " . ($positive_ytd_comments_1 ? "'$positive_ytd_comments_1'" : "NULL") . ",
-            positive_ytd_kpi_2 = " . ($positive_ytd_kpi_2 ? "'$positive_ytd_kpi_2'" : "NULL") . ",
+            positive_ytd_kpi_2 = NULL,
             positive_ytd_comments_2 = " . ($positive_ytd_comments_2 ? "'$positive_ytd_comments_2'" : "NULL") . ",
-            positive_ytd_kpi_3 = " . ($positive_ytd_kpi_3 ? "'$positive_ytd_kpi_3'" : "NULL") . ",
+            positive_ytd_kpi_3 = NULL,
             positive_ytd_comments_3 = " . ($positive_ytd_comments_3 ? "'$positive_ytd_comments_3'" : "NULL") . ",
+            positive_ytd_kpi_4 = NULL,
+            positive_ytd_comments_4 = " . ($positive_ytd_comments_4 ? "'$positive_ytd_comments_4'" : "NULL") . ",
+            positive_ytd_kpi_5 = NULL,
+            positive_ytd_comments_5 = " . ($positive_ytd_comments_5 ? "'$positive_ytd_comments_5'" : "NULL") . ",
             positive_ytd_other = " . ($positive_ytd_other ? "'$positive_ytd_other'" : "NULL") . ",
-            challenge_month_kpi_1 = " . ($challenge_month_kpi_1 ? "'$challenge_month_kpi_1'" : "NULL") . ",
+            challenge_month_kpi_1 = NULL,
             challenge_month_comments_1 = " . ($challenge_month_comments_1 ? "'$challenge_month_comments_1'" : "NULL") . ",
-            challenge_month_kpi_2 = " . ($challenge_month_kpi_2 ? "'$challenge_month_kpi_2'" : "NULL") . ",
+            challenge_month_kpi_2 = NULL,
             challenge_month_comments_2 = " . ($challenge_month_comments_2 ? "'$challenge_month_comments_2'" : "NULL") . ",
-            challenge_month_kpi_3 = " . ($challenge_month_kpi_3 ? "'$challenge_month_kpi_3'" : "NULL") . ",
+            challenge_month_kpi_3 = NULL,
             challenge_month_comments_3 = " . ($challenge_month_comments_3 ? "'$challenge_month_comments_3'" : "NULL") . ",
+            challenge_month_kpi_4 = NULL,
+            challenge_month_comments_4 = " . ($challenge_month_comments_4 ? "'$challenge_month_comments_4'" : "NULL") . ",
+            challenge_month_kpi_5 = NULL,
+            challenge_month_comments_5 = " . ($challenge_month_comments_5 ? "'$challenge_month_comments_5'" : "NULL") . ",
             challenge_month_other = " . ($challenge_month_other ? "'$challenge_month_other'" : "NULL") . ",
-            challenge_ytd_kpi_1 = " . ($challenge_ytd_kpi_1 ? "'$challenge_ytd_kpi_1'" : "NULL") . ",
+            challenge_ytd_kpi_1 = NULL,
             challenge_ytd_comments_1 = " . ($challenge_ytd_comments_1 ? "'$challenge_ytd_comments_1'" : "NULL") . ",
-            challenge_ytd_kpi_2 = " . ($challenge_ytd_kpi_2 ? "'$challenge_ytd_kpi_2'" : "NULL") . ",
+            challenge_ytd_kpi_2 = NULL,
             challenge_ytd_comments_2 = " . ($challenge_ytd_comments_2 ? "'$challenge_ytd_comments_2'" : "NULL") . ",
-            challenge_ytd_kpi_3 = " . ($challenge_ytd_kpi_3 ? "'$challenge_ytd_kpi_3'" : "NULL") . ",
+            challenge_ytd_kpi_3 = NULL,
             challenge_ytd_comments_3 = " . ($challenge_ytd_comments_3 ? "'$challenge_ytd_comments_3'" : "NULL") . ",
+            challenge_ytd_kpi_4 = NULL,
+            challenge_ytd_comments_4 = " . ($challenge_ytd_comments_4 ? "'$challenge_ytd_comments_4'" : "NULL") . ",
+            challenge_ytd_kpi_5 = NULL,
+            challenge_ytd_comments_5 = " . ($challenge_ytd_comments_5 ? "'$challenge_ytd_comments_5'" : "NULL") . ",
             challenge_ytd_other = " . ($challenge_ytd_other ? "'$challenge_ytd_other'" : "NULL") . ",
             morale_meter = " . ($moraleMeter ? "$moraleMeter" : "NULL") . ",
             morale_notes = " . ($moraleNotes ? "'$moraleNotes'" : "NULL") . ",
@@ -702,31 +800,43 @@ if (!empty($userDrafts)) {
         $sql = "INSERT INTO kpiReview (
             month, year, branch_manager, location_name, location_number, submitted_by, status,
             positive_month_kpi_1, positive_month_comments_1, positive_month_kpi_2, positive_month_comments_2, 
-            positive_month_kpi_3, positive_month_comments_3, positive_month_other,
+            positive_month_kpi_3, positive_month_comments_3, positive_month_kpi_4, positive_month_comments_4,
+            positive_month_kpi_5, positive_month_comments_5, positive_month_other,
             positive_ytd_kpi_1, positive_ytd_comments_1, positive_ytd_kpi_2, positive_ytd_comments_2,
-            positive_ytd_kpi_3, positive_ytd_comments_3, positive_ytd_other,
+            positive_ytd_kpi_3, positive_ytd_comments_3, positive_ytd_kpi_4, positive_ytd_comments_4,
+            positive_ytd_kpi_5, positive_ytd_comments_5, positive_ytd_other,
             challenge_month_kpi_1, challenge_month_comments_1, challenge_month_kpi_2, challenge_month_comments_2,
-            challenge_month_kpi_3, challenge_month_comments_3, challenge_month_other,
+            challenge_month_kpi_3, challenge_month_comments_3, challenge_month_kpi_4, challenge_month_comments_4,
+            challenge_month_kpi_5, challenge_month_comments_5, challenge_month_other,
             challenge_ytd_kpi_1, challenge_ytd_comments_1, challenge_ytd_kpi_2, challenge_ytd_comments_2,
-            challenge_ytd_kpi_3, challenge_ytd_comments_3, challenge_ytd_other,
+            challenge_ytd_kpi_3, challenge_ytd_comments_3, challenge_ytd_kpi_4, challenge_ytd_comments_4,
+            challenge_ytd_kpi_5, challenge_ytd_comments_5, challenge_ytd_other,
             morale_meter, morale_notes
         ) VALUES (
             '$month', $year, " . ($branchManager ? "'$branchManager'" : "NULL") . ", '$locationName', '$locationNumber', '$submittedBy', '$status',
-            " . ($positive_month_kpi_1 ? "'$positive_month_kpi_1'" : "NULL") . ", " . ($positive_month_comments_1 ? "'$positive_month_comments_1'" : "NULL") . ",
-            " . ($positive_month_kpi_2 ? "'$positive_month_kpi_2'" : "NULL") . ", " . ($positive_month_comments_2 ? "'$positive_month_comments_2'" : "NULL") . ",
-            " . ($positive_month_kpi_3 ? "'$positive_month_kpi_3'" : "NULL") . ", " . ($positive_month_comments_3 ? "'$positive_month_comments_3'" : "NULL") . ",
+            NULL, " . ($positive_month_comments_1 ? "'$positive_month_comments_1'" : "NULL") . ",
+            NULL, " . ($positive_month_comments_2 ? "'$positive_month_comments_2'" : "NULL") . ",
+            NULL, " . ($positive_month_comments_3 ? "'$positive_month_comments_3'" : "NULL") . ",
+            NULL, " . ($positive_month_comments_4 ? "'$positive_month_comments_4'" : "NULL") . ",
+            NULL, " . ($positive_month_comments_5 ? "'$positive_month_comments_5'" : "NULL") . ",
             " . ($positive_month_other ? "'$positive_month_other'" : "NULL") . ",
-            " . ($positive_ytd_kpi_1 ? "'$positive_ytd_kpi_1'" : "NULL") . ", " . ($positive_ytd_comments_1 ? "'$positive_ytd_comments_1'" : "NULL") . ",
-            " . ($positive_ytd_kpi_2 ? "'$positive_ytd_kpi_2'" : "NULL") . ", " . ($positive_ytd_comments_2 ? "'$positive_ytd_comments_2'" : "NULL") . ",
-            " . ($positive_ytd_kpi_3 ? "'$positive_ytd_kpi_3'" : "NULL") . ", " . ($positive_ytd_comments_3 ? "'$positive_ytd_comments_3'" : "NULL") . ",
+            NULL, " . ($positive_ytd_comments_1 ? "'$positive_ytd_comments_1'" : "NULL") . ",
+            NULL, " . ($positive_ytd_comments_2 ? "'$positive_ytd_comments_2'" : "NULL") . ",
+            NULL, " . ($positive_ytd_comments_3 ? "'$positive_ytd_comments_3'" : "NULL") . ",
+            NULL, " . ($positive_ytd_comments_4 ? "'$positive_ytd_comments_4'" : "NULL") . ",
+            NULL, " . ($positive_ytd_comments_5 ? "'$positive_ytd_comments_5'" : "NULL") . ",
             " . ($positive_ytd_other ? "'$positive_ytd_other'" : "NULL") . ",
-            " . ($challenge_month_kpi_1 ? "'$challenge_month_kpi_1'" : "NULL") . ", " . ($challenge_month_comments_1 ? "'$challenge_month_comments_1'" : "NULL") . ",
-            " . ($challenge_month_kpi_2 ? "'$challenge_month_kpi_2'" : "NULL") . ", " . ($challenge_month_comments_2 ? "'$challenge_month_comments_2'" : "NULL") . ",
-            " . ($challenge_month_kpi_3 ? "'$challenge_month_kpi_3'" : "NULL") . ", " . ($challenge_month_comments_3 ? "'$challenge_month_comments_3'" : "NULL") . ",
+            NULL, " . ($challenge_month_comments_1 ? "'$challenge_month_comments_1'" : "NULL") . ",
+            NULL, " . ($challenge_month_comments_2 ? "'$challenge_month_comments_2'" : "NULL") . ",
+            NULL, " . ($challenge_month_comments_3 ? "'$challenge_month_comments_3'" : "NULL") . ",
+            NULL, " . ($challenge_month_comments_4 ? "'$challenge_month_comments_4'" : "NULL") . ",
+            NULL, " . ($challenge_month_comments_5 ? "'$challenge_month_comments_5'" : "NULL") . ",
             " . ($challenge_month_other ? "'$challenge_month_other'" : "NULL") . ",
-            " . ($challenge_ytd_kpi_1 ? "'$challenge_ytd_kpi_1'" : "NULL") . ", " . ($challenge_ytd_comments_1 ? "'$challenge_ytd_comments_1'" : "NULL") . ",
-            " . ($challenge_ytd_kpi_2 ? "'$challenge_ytd_kpi_2'" : "NULL") . ", " . ($challenge_ytd_comments_2 ? "'$challenge_ytd_comments_2'" : "NULL") . ",
-            " . ($challenge_ytd_kpi_3 ? "'$challenge_ytd_kpi_3'" : "NULL") . ", " . ($challenge_ytd_comments_3 ? "'$challenge_ytd_comments_3'" : "NULL") . ",
+            NULL, " . ($challenge_ytd_comments_1 ? "'$challenge_ytd_comments_1'" : "NULL") . ",
+            NULL, " . ($challenge_ytd_comments_2 ? "'$challenge_ytd_comments_2'" : "NULL") . ",
+            NULL, " . ($challenge_ytd_comments_3 ? "'$challenge_ytd_comments_3'" : "NULL") . ",
+            NULL, " . ($challenge_ytd_comments_4 ? "'$challenge_ytd_comments_4'" : "NULL") . ",
+            NULL, " . ($challenge_ytd_comments_5 ? "'$challenge_ytd_comments_5'" : "NULL") . ",
             " . ($challenge_ytd_other ? "'$challenge_ytd_other'" : "NULL") . ",
             " . ($moraleMeter ? "$moraleMeter" : "NULL") . ", " . ($moraleNotes ? "'$moraleNotes'" : "NULL") . "
         )";
@@ -797,24 +907,26 @@ if (!empty($userDrafts)) {
         
         // Positive Results / Wins
         $messageOut .= "<h4>POSITIVE RESULTS / WINS</h4>";
-        $messageOut .= "<h5>MONTH</h5>";
-        $messageOut .= "<p><strong>KPI 1:</strong> " . htmlspecialchars($_POST['positive_month_kpi_1'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 1:</strong> " . nl2br(htmlspecialchars($_POST['positive_month_comments_1'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 2:</strong> " . htmlspecialchars($_POST['positive_month_kpi_2'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 2:</strong> " . nl2br(htmlspecialchars($_POST['positive_month_comments_2'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 3:</strong> " . htmlspecialchars($_POST['positive_month_kpi_3'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 3:</strong> " . nl2br(htmlspecialchars($_POST['positive_month_comments_3'] ?? '')) . "</p>";
+        $messageOut .= "<h5><strong>MONTH</strong></h5>";
+        for ($i = 1; $i <= 5; $i++) {
+            $kpiName = $kpiNames[$i];
+            $comments = $_POST['positive_month_comments_' . $i] ?? '';
+            if (!empty($comments)) {
+                $messageOut .= "<p><strong>" . htmlspecialchars($kpiName) . ":</strong> " . nl2br(htmlspecialchars($comments)) . "</p>";
+            }
+        }
         if (!empty($_POST['positive_month_other'])) {
             $messageOut .= "<p><strong>Other Comments:</strong> " . nl2br(htmlspecialchars($_POST['positive_month_other'])) . "</p>";
         }
         
-        $messageOut .= "<h5>YEAR TO DATE</h5>";
-        $messageOut .= "<p><strong>KPI 1:</strong> " . htmlspecialchars($_POST['positive_ytd_kpi_1'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 1:</strong> " . nl2br(htmlspecialchars($_POST['positive_ytd_comments_1'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 2:</strong> " . htmlspecialchars($_POST['positive_ytd_kpi_2'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 2:</strong> " . nl2br(htmlspecialchars($_POST['positive_ytd_comments_2'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 3:</strong> " . htmlspecialchars($_POST['positive_ytd_kpi_3'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 3:</strong> " . nl2br(htmlspecialchars($_POST['positive_ytd_comments_3'] ?? '')) . "</p>";
+        $messageOut .= "<h5><strong>YEAR TO DATE</strong></h5>";
+        for ($i = 1; $i <= 5; $i++) {
+            $kpiName = $kpiNames[$i];
+            $comments = $_POST['positive_ytd_comments_' . $i] ?? '';
+            if (!empty($comments)) {
+                $messageOut .= "<p><strong>" . htmlspecialchars($kpiName) . ":</strong> " . nl2br(htmlspecialchars($comments)) . "</p>";
+            }
+        }
         if (!empty($_POST['positive_ytd_other'])) {
             $messageOut .= "<p><strong>Other Comments:</strong> " . nl2br(htmlspecialchars($_POST['positive_ytd_other'])) . "</p>";
         }
@@ -823,24 +935,26 @@ if (!empty($userDrafts)) {
         
         // Challenges / Opportunities
         $messageOut .= "<h4>CHALLENGES / OPPORTUNITIES</h4>";
-        $messageOut .= "<h5>MONTH</h5>";
-        $messageOut .= "<p><strong>KPI 1:</strong> " . htmlspecialchars($_POST['challenge_month_kpi_1'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 1:</strong> " . nl2br(htmlspecialchars($_POST['challenge_month_comments_1'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 2:</strong> " . htmlspecialchars($_POST['challenge_month_kpi_2'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 2:</strong> " . nl2br(htmlspecialchars($_POST['challenge_month_comments_2'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 3:</strong> " . htmlspecialchars($_POST['challenge_month_kpi_3'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 3:</strong> " . nl2br(htmlspecialchars($_POST['challenge_month_comments_3'] ?? '')) . "</p>";
+        $messageOut .= "<h5><strong>MONTH</strong></h5>";
+        for ($i = 1; $i <= 5; $i++) {
+            $kpiName = $kpiNames[$i];
+            $comments = $_POST['challenge_month_comments_' . $i] ?? '';
+            if (!empty($comments)) {
+                $messageOut .= "<p><strong>" . htmlspecialchars($kpiName) . ":</strong> " . nl2br(htmlspecialchars($comments)) . "</p>";
+            }
+        }
         if (!empty($_POST['challenge_month_other'])) {
             $messageOut .= "<p><strong>Other Comments:</strong> " . nl2br(htmlspecialchars($_POST['challenge_month_other'])) . "</p>";
         }
         
-        $messageOut .= "<h5>YEAR TO DATE</h5>";
-        $messageOut .= "<p><strong>KPI 1:</strong> " . htmlspecialchars($_POST['challenge_ytd_kpi_1'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 1:</strong> " . nl2br(htmlspecialchars($_POST['challenge_ytd_comments_1'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 2:</strong> " . htmlspecialchars($_POST['challenge_ytd_kpi_2'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 2:</strong> " . nl2br(htmlspecialchars($_POST['challenge_ytd_comments_2'] ?? '')) . "</p>";
-        $messageOut .= "<p><strong>KPI 3:</strong> " . htmlspecialchars($_POST['challenge_ytd_kpi_3'] ?? '') . "</p>";
-        $messageOut .= "<p><strong>Comments 3:</strong> " . nl2br(htmlspecialchars($_POST['challenge_ytd_comments_3'] ?? '')) . "</p>";
+        $messageOut .= "<h5><strong>YEAR TO DATE</strong></h5>";
+        for ($i = 1; $i <= 5; $i++) {
+            $kpiName = $kpiNames[$i];
+            $comments = $_POST['challenge_ytd_comments_' . $i] ?? '';
+            if (!empty($comments)) {
+                $messageOut .= "<p><strong>" . htmlspecialchars($kpiName) . ":</strong> " . nl2br(htmlspecialchars($comments)) . "</p>";
+            }
+        }
         if (!empty($_POST['challenge_ytd_other'])) {
             $messageOut .= "<p><strong>Other Comments:</strong> " . nl2br(htmlspecialchars($_POST['challenge_ytd_other'])) . "</p>";
         }
@@ -924,8 +1038,8 @@ if (!empty($userDrafts)) {
         }
         */
         
-        // TEMPORARY: For now, send to cjones@mayesh.com for testing
-        $outEmails = "cjones@mayesh.com";
+        // TEMPORARY: For now, send to cjones@mayesh.com and dburrows@mayesh.com for testing
+        $outEmails = "cjones@mayesh.com,dburrows@mayesh.com";
         
         $debugInfo[] = "Email recipients: " . $outEmails;
         
@@ -1000,8 +1114,8 @@ if (!empty($userDrafts)) {
             }
             */
             
-            // TEMPORARY: For now, send to cjones@mayesh.com for testing
-            $to = "cjones@mayesh.com";
+            // TEMPORARY: For now, send to cjones@mayesh.com and dburrows@mayesh.com for testing
+            $to = "cjones@mayesh.com,dburrows@mayesh.com";
             $subject = "[KPI Review] " . $_POST['month'] . " " . $_POST['year'] . " KPI Review for " . $_POST['locationName'] . " Submitted!";
             
             $debugInfo[] = "Email recipients (fallback): " . $to;
@@ -1014,37 +1128,41 @@ if (!empty($userDrafts)) {
             $message .= "Submitted by: " . $_POST['supp_Name'] . "\n\n";
             $message .= "--- POSITIVE RESULTS / WINS ---\n";
             $message .= "MONTH:\n";
-            if (!empty($_POST['positive_month_kpi_1'])) $message .= "KPI 1: " . $_POST['positive_month_kpi_1'] . "\n";
-            if (!empty($_POST['positive_month_comments_1'])) $message .= "Comments: " . $_POST['positive_month_comments_1'] . "\n\n";
-            if (!empty($_POST['positive_month_kpi_2'])) $message .= "KPI 2: " . $_POST['positive_month_kpi_2'] . "\n";
-            if (!empty($_POST['positive_month_comments_2'])) $message .= "Comments: " . $_POST['positive_month_comments_2'] . "\n\n";
-            if (!empty($_POST['positive_month_kpi_3'])) $message .= "KPI 3: " . $_POST['positive_month_kpi_3'] . "\n";
-            if (!empty($_POST['positive_month_comments_3'])) $message .= "Comments: " . $_POST['positive_month_comments_3'] . "\n\n";
+            for ($i = 1; $i <= 5; $i++) {
+                $kpiName = $kpiNames[$i];
+                $comments = $_POST['positive_month_comments_' . $i] ?? '';
+                if (!empty($comments)) {
+                    $message .= $kpiName . ": " . $comments . "\n\n";
+                }
+            }
             if (!empty($_POST['positive_month_other'])) $message .= "Other: " . $_POST['positive_month_other'] . "\n\n";
             $message .= "YEAR TO DATE:\n";
-            if (!empty($_POST['positive_ytd_kpi_1'])) $message .= "KPI 1: " . $_POST['positive_ytd_kpi_1'] . "\n";
-            if (!empty($_POST['positive_ytd_comments_1'])) $message .= "Comments: " . $_POST['positive_ytd_comments_1'] . "\n\n";
-            if (!empty($_POST['positive_ytd_kpi_2'])) $message .= "KPI 2: " . $_POST['positive_ytd_kpi_2'] . "\n";
-            if (!empty($_POST['positive_ytd_comments_2'])) $message .= "Comments: " . $_POST['positive_ytd_comments_2'] . "\n\n";
-            if (!empty($_POST['positive_ytd_kpi_3'])) $message .= "KPI 3: " . $_POST['positive_ytd_kpi_3'] . "\n";
-            if (!empty($_POST['positive_ytd_comments_3'])) $message .= "Comments: " . $_POST['positive_ytd_comments_3'] . "\n\n";
+            for ($i = 1; $i <= 5; $i++) {
+                $kpiName = $kpiNames[$i];
+                $comments = $_POST['positive_ytd_comments_' . $i] ?? '';
+                if (!empty($comments)) {
+                    $message .= $kpiName . ": " . $comments . "\n\n";
+                }
+            }
             if (!empty($_POST['positive_ytd_other'])) $message .= "Other: " . $_POST['positive_ytd_other'] . "\n\n";
             $message .= "\n--- CHALLENGES / OPPORTUNITIES ---\n";
             $message .= "MONTH:\n";
-            if (!empty($_POST['challenge_month_kpi_1'])) $message .= "KPI 1: " . $_POST['challenge_month_kpi_1'] . "\n";
-            if (!empty($_POST['challenge_month_comments_1'])) $message .= "Comments: " . $_POST['challenge_month_comments_1'] . "\n\n";
-            if (!empty($_POST['challenge_month_kpi_2'])) $message .= "KPI 2: " . $_POST['challenge_month_kpi_2'] . "\n";
-            if (!empty($_POST['challenge_month_comments_2'])) $message .= "Comments: " . $_POST['challenge_month_comments_2'] . "\n\n";
-            if (!empty($_POST['challenge_month_kpi_3'])) $message .= "KPI 3: " . $_POST['challenge_month_kpi_3'] . "\n";
-            if (!empty($_POST['challenge_month_comments_3'])) $message .= "Comments: " . $_POST['challenge_month_comments_3'] . "\n\n";
+            for ($i = 1; $i <= 5; $i++) {
+                $kpiName = $kpiNames[$i];
+                $comments = $_POST['challenge_month_comments_' . $i] ?? '';
+                if (!empty($comments)) {
+                    $message .= $kpiName . ": " . $comments . "\n\n";
+                }
+            }
             if (!empty($_POST['challenge_month_other'])) $message .= "Other: " . $_POST['challenge_month_other'] . "\n\n";
             $message .= "YEAR TO DATE:\n";
-            if (!empty($_POST['challenge_ytd_kpi_1'])) $message .= "KPI 1: " . $_POST['challenge_ytd_kpi_1'] . "\n";
-            if (!empty($_POST['challenge_ytd_comments_1'])) $message .= "Comments: " . $_POST['challenge_ytd_comments_1'] . "\n\n";
-            if (!empty($_POST['challenge_ytd_kpi_2'])) $message .= "KPI 2: " . $_POST['challenge_ytd_kpi_2'] . "\n";
-            if (!empty($_POST['challenge_ytd_comments_2'])) $message .= "Comments: " . $_POST['challenge_ytd_comments_2'] . "\n\n";
-            if (!empty($_POST['challenge_ytd_kpi_3'])) $message .= "KPI 3: " . $_POST['challenge_ytd_kpi_3'] . "\n";
-            if (!empty($_POST['challenge_ytd_comments_3'])) $message .= "Comments: " . $_POST['challenge_ytd_comments_3'] . "\n\n";
+            for ($i = 1; $i <= 5; $i++) {
+                $kpiName = $kpiNames[$i];
+                $comments = $_POST['challenge_ytd_comments_' . $i] ?? '';
+                if (!empty($comments)) {
+                    $message .= $kpiName . ": " . $comments . "\n\n";
+                }
+            }
             if (!empty($_POST['challenge_ytd_other'])) $message .= "Other: " . $_POST['challenge_ytd_other'] . "\n\n";
             $message .= "\n--- MORALE METER ---\n";
             $message .= "Rating: " . $_POST['moraleMeter'] . "\n";
@@ -1079,7 +1197,7 @@ if (!empty($userDrafts)) {
             echo '<div class="mt-4" style="border-top: 2px solid #ccc; padding-top: 20px;">';
             echo '<h5>Email Status:</h5>';
             if ($emailSent) {
-                echo '<p class="text-success"><strong>✓ Email notification sent to cjones@mayesh.com</strong></p>';
+                echo '<p class="text-success"><strong>✓ Email notification sent to cjones@mayesh.com and dburrows@mayesh.com</strong></p>';
             } else {
                 echo '<p class="text-warning"><strong>⚠ Email notification could not be sent. Data was saved successfully.</strong></p>';
                 if ($emailError) {
@@ -1090,7 +1208,7 @@ if (!empty($userDrafts)) {
             echo '</div>';
         }
         
-        echo '<a href="KPIReview.php" class="btn btn-success">Submit Another</a>';
+        echo '<a href="index.php" class="btn btn-success">Submit Another</a>';
         echo ' <a href="../../" class="btn btn-secondary">Return Home</a>';
         echo '</div></div></div>';
     } else {
@@ -1100,7 +1218,7 @@ if (!empty($userDrafts)) {
         echo '<h4>Error submitting Manager KPI Review</h4>';
         echo '<p>Error: ' . $conn->error . '</p>';
         echo '<p><strong>Note:</strong> The database table may need to be created first. Please contact your administrator.</p>';
-        echo '<br><a href="KPIReview.php" class="btn btn-primary">Try Again</a>';
+        echo '<br><a href="index.php" class="btn btn-primary">Try Again</a>';
         echo '</div></div></div>';
     }
     
@@ -1120,16 +1238,52 @@ if (!empty($userDrafts)) {
     }
     echo '<hr>';
     echo '<h5>POSITIVE RESULTS / WINS</h5>';
-    echo '<p><strong>Month - KPI 1:</strong> ' . htmlspecialchars($_POST['positive_month_kpi_1'] ?? '') . '</p>';
-    echo '<p><strong>Month - Comments 1:</strong> ' . nl2br(htmlspecialchars($_POST['positive_month_comments_1'] ?? '')) . '</p>';
-    echo '<p><strong>Year to Date - KPI 1:</strong> ' . htmlspecialchars($_POST['positive_ytd_kpi_1'] ?? '') . '</p>';
-    echo '<p><strong>Year to Date - Comments 1:</strong> ' . nl2br(htmlspecialchars($_POST['positive_ytd_comments_1'] ?? '')) . '</p>';
+    echo '<h6>MONTH</h6>';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
+        $comments = $_POST['positive_month_comments_' . $i] ?? '';
+        if (!empty($comments)) {
+            echo '<p><strong>' . htmlspecialchars($kpiName) . ':</strong> ' . nl2br(htmlspecialchars($comments)) . '</p>';
+        }
+    }
+    if (!empty($_POST['positive_month_other'])) {
+        echo '<p><strong>Other Comments:</strong> ' . nl2br(htmlspecialchars($_POST['positive_month_other'])) . '</p>';
+    }
+    echo '<h6>YEAR TO DATE</h6>';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
+        $comments = $_POST['positive_ytd_comments_' . $i] ?? '';
+        if (!empty($comments)) {
+            echo '<p><strong>' . htmlspecialchars($kpiName) . ':</strong> ' . nl2br(htmlspecialchars($comments)) . '</p>';
+        }
+    }
+    if (!empty($_POST['positive_ytd_other'])) {
+        echo '<p><strong>Other Comments:</strong> ' . nl2br(htmlspecialchars($_POST['positive_ytd_other'])) . '</p>';
+    }
     echo '<hr>';
     echo '<h5>CHALLENGES / OPPORTUNITIES</h5>';
-    echo '<p><strong>Month - KPI 1:</strong> ' . htmlspecialchars($_POST['challenge_month_kpi_1'] ?? '') . '</p>';
-    echo '<p><strong>Month - Comments 1:</strong> ' . nl2br(htmlspecialchars($_POST['challenge_month_comments_1'] ?? '')) . '</p>';
-    echo '<p><strong>Year to Date - KPI 1:</strong> ' . htmlspecialchars($_POST['challenge_ytd_kpi_1'] ?? '') . '</p>';
-    echo '<p><strong>Year to Date - Comments 1:</strong> ' . nl2br(htmlspecialchars($_POST['challenge_ytd_comments_1'] ?? '')) . '</p>';
+    echo '<h6>MONTH</h6>';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
+        $comments = $_POST['challenge_month_comments_' . $i] ?? '';
+        if (!empty($comments)) {
+            echo '<p><strong>' . htmlspecialchars($kpiName) . ':</strong> ' . nl2br(htmlspecialchars($comments)) . '</p>';
+        }
+    }
+    if (!empty($_POST['challenge_month_other'])) {
+        echo '<p><strong>Other Comments:</strong> ' . nl2br(htmlspecialchars($_POST['challenge_month_other'])) . '</p>';
+    }
+    echo '<h6>YEAR TO DATE</h6>';
+    for ($i = 1; $i <= 5; $i++) {
+        $kpiName = $kpiNames[$i];
+        $comments = $_POST['challenge_ytd_comments_' . $i] ?? '';
+        if (!empty($comments)) {
+            echo '<p><strong>' . htmlspecialchars($kpiName) . ':</strong> ' . nl2br(htmlspecialchars($comments)) . '</p>';
+        }
+    }
+    if (!empty($_POST['challenge_ytd_other'])) {
+        echo '<p><strong>Other Comments:</strong> ' . nl2br(htmlspecialchars($_POST['challenge_ytd_other'])) . '</p>';
+    }
     echo '</div></div></div>';
 }
 ?>
