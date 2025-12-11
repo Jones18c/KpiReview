@@ -138,7 +138,7 @@ if (!$conn->connect_error) {
     $conn->close();
 }
 
-$currentMonth = date("F"); // Current month name
+$currentMonth = date("F", strtotime("-2 months")); // Default to two months ago
 $currentYear = date("Y");
 
 // Check if there's an existing draft - either from URL parameter or for this location/month/year
